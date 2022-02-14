@@ -1,0 +1,151 @@
+Question 1: Whats the rental difference between Alberta and Queensland
+
+with t1 as (
+	select
+		se.store_id storeid,
+		date_part('year', rental_date) rent_year,
+		date_part('month', rental_date) rent_month,
+		c.city rent_city,
+		ad.district rent_district,
+		count(payment_id) over (partition by payment_id) as rent_count
+	from store se
+	join staff sf
+		on se.store_id = sf.store_id
+	join payment p
+		on p.customer_id = sf.staff_id
+	join rental r
+		on r.rental_id = p.rental_id
+	join address ad
+		on sf.address_id = ad.address_id
+	join city c
+		on c.city_id = ad.city_id
+	order by 1
+	),
+
+	t2 as (
+		select
+		storeid,
+		rent_year,
+		rent_month,
+		count(rent_count) over (partition by rent_count) total
+		from t1)
+
+select
+	t2.storeid,
+	t2.rent_year,
+	t2.rent_month,
+	t1.rent_city,
+	t1.rent_district,
+count(t2.total) as total
+
+from t1, t2
+where t1.storeid = t2.storeid
+group by 1,2,3,4,5
+order by 1
+
+
+
+Question 2: Who are the Top 10 Customers
+
+select
+	fullname,
+	yyyym,
+	sum(pay_amount) totalamount,
+	count(payment_count) totalcount
+
+from  (
+	select
+	concat(c.first_name, ' ', c.last_name) fullname,
+	p.amount pay_amount,
+	concat(date_part('year',p.payment_date),'-',
+	   date_part('month',p.payment_date)) as YYYYM,
+	count(payment_id) over (partition by payment_date) as payment_count
+
+
+	from payment p
+	join customer c
+		on p.customer_id = c.customer_id )sub
+
+group by 1,2
+order by 3 desc
+limit 11
+
+
+
+
+Question 3: What's the payment difference
+
+with t1 as (select
+			concat(c.first_name,' ',c.last_name) fullname,
+			p.amount pay_amount,
+			concat(date_part('year',p.payment_date),'-',
+	  		 date_part('month',p.payment_date)) as date,
+			count(payment_id) over (partition by payment_date) as payment_count
+			from payment p
+			join customer c
+			on p.customer_id = c.customer_id),
+
+ 	t2 as (select
+			t1.fullname,
+			t1.date,
+			sum(pay_amount) totalamount,
+			count(payment_count) totalcount
+		   from t1
+		   group by 1,2),
+
+	t3 as (select t2.fullname,
+		   	t2.date,
+		   	t2.totalamount,
+			lead(totalamount) over (partition by fullname order by date) as lead,
+			lead(totalamount) over (partition by fullname order by date) - totalamount as leaddifference
+			from t2)
+
+select
+	fullname,
+	date,
+	totalamount,
+	leaddifference,
+	case
+		when leaddifference = max(leaddifference)
+		over (order by date)
+		then 'MAX' else NULL end as max
+
+from t3
+where date between '2007-2' and '2007-6' and
+ 	fullname in ('Eleanor Hunt','Arnold Havens','Gordon Allard','Rhonda Kennedy','Clara Shaw',
+					'Tommy Collazo','Karl Seal','Marsha Douglas','Daisy Bates')
+order by 1
+
+
+
+
+
+
+Question 4: Whats the rented amount
+
+with t1 as (select
+		f.title moviename,
+		c.name categoryname,
+		count(rental_date) over (partition by f.title order by c.name )timesrented,
+		ntile(4) over (order by rental_date) standard_quartile
+
+		from category c
+		join film_category fc
+			on c.category_id = fc.category_id
+		join film f
+			on f.film_id = fc.film_id
+		join inventory i
+			on 	i.film_id = f.film_id
+		join rental r
+			on r.inventory_id = i.inventory_id
+		where c.name in ('Animation','Children','Classics','Comedy','Family','Music')
+		order by 1)
+
+select
+		moviename,
+		categoryname,
+		timesrented,
+		standard_quartile
+from t1
+group by 1,2,3,4
+order by 2,1
